@@ -1,2 +1,2 @@
 # aicam
-Person detection from stream detection, publishing to home assistant
+Person detection from video stream, publishing to home assistant
