@@ -18,6 +18,10 @@ class VideoStream:
 
     def __init__(self, resolution=(640, 480)):
         # Initialize the camera image stream
+
+        # Important for cameras that don't properly report UDP transport
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+
         self.stream = cv2.VideoCapture(STREAM_URL)
         self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         self.stream.set(3, resolution[0])
@@ -68,7 +72,7 @@ parser.add_argument('--labels', help='Name of the labelmap file, if different th
 parser.add_argument('--threshold', help='Minimum confidence threshold for displaying detected objects',
                     default=0.5)
 parser.add_argument('--resolution', help='Desired webcam resolution in WxH. If the webcam does not support the resolution entered, errors may occur.',
-                    default='1280x720')
+                    default='640x480')  # TODO The default resolution should be read from the streamed frame or the bounding boxes will be wrong!
 parser.add_argument('--edgetpu', help='Use Coral Edge TPU Accelerator to speed up detection',
                     action='store_true')
 
@@ -186,6 +190,7 @@ while True:
 
             # Get bounding box coordinates and draw box
             # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
+            # print(imW, imH, boxes[1])
             ymin = int(max(1, (boxes[i][0] * imH)))
             xmin = int(max(1, (boxes[i][1] * imW)))
             ymax = int(min(imH, (boxes[i][2] * imH)))
