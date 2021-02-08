@@ -19,11 +19,18 @@ class Mqtt:
 
         client.connect(host, port, keepalive, bind_address)
 
-        config_topic = f"homeassistant/binary_sensor/{name}/config"
-        config_msg = f"{{'name': '{name}', 'device_class': 'motion', 'state_topic': 'homeassistant/binary_sensor/{name}/state'}}"
+        self.base = base = f"homeassistant/binary_sensor/{name}"
+        config_topic = f'{base}/config'
+        config_msg = f'{{"name": "{name}", "device_class": "motion", "state_topic": "{base}/state"}}'
 
-        print(config_topic, config_msg)
-        # client.publish(config_topic, config_msg)
+        # print(config_topic, config_msg)
+        client.publish(config_topic, config_msg)
+
+    def state(self, state, confidence):
+        self.client.publish(f"{self.base}/state", state)
+
+    def stop(self):
+        self.client.publish(f"{self.base}/config", "")
 
 
 # Define VideoStream class to handle streaming of video from webcam in separate processing thread
@@ -96,6 +103,7 @@ parser.add_argument('--mqtt_name', help="Name of binary_sensor device", default=
 
 args = parser.parse_args()
 
+mqtt = None
 if args.mqtt_host != '':
     mqtt = Mqtt(args.mqtt_host, name=args.mqtt_name)
 
@@ -216,6 +224,9 @@ while not stop:
     scores = interpreter.get_tensor(output_details[2]['index'])[0]  # Confidence of detected objects
     # num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
 
+    # Hold the highest confidence of person in image
+    person_confidence = 0
+
     # Loop over all detections and draw detection box if confidence is above minimum threshold
     for i in range(len(scores)):
         if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0)):
@@ -228,10 +239,18 @@ while not stop:
             ymax = int(min(imH, (boxes[i][2] * imH)))
             xmax = int(min(imW, (boxes[i][3] * imW)))
 
+            object_name = labels[int(classes[i])]
+            # if object_name != 'person' or area < 2000 or area > 50000:
+            if object_name != 'person':
+                pass
+                # continue
+
+            if scores[i] > person_confidence:
+                person_confidence = scores[1]
+
             cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (10, 255, 0), 2)
 
             # Draw label
-            object_name = labels[int(classes[i])]  # Look up object name from "labels" array using class index
             label = '%s: %d%%' % (object_name, int(scores[i] * 100))  # Example: 'person: 72%'
             labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)  # Get font size
             label_ymin = max(ymin, labelSize[1] + 10)  # Make sure not to draw label too close to top of window
@@ -245,6 +264,13 @@ while not stop:
                 frame, label, (xmin, label_ymin - 7), cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, (0, 0, 0), 2
             )  # Draw label text
+
+    if mqtt:
+        if person_confidence > 0:
+            state = 'ON'
+        else:
+            state = 'OFF'
+        mqtt.state(state, person_confidence)
 
     # Draw framerate in corner of frame
     cv2.putText(frame, 'FPS: {0:.2f}'.format(frame_rate_calc), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
@@ -265,3 +291,6 @@ while not stop:
 # Clean up
 cv2.destroyAllWindows()
 videostream.stop()
+
+if mqtt:
+    mqtt.stop()
