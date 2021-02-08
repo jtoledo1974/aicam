@@ -10,6 +10,7 @@ import time
 from threading import Thread
 import importlib.util
 import signal
+import logging
 
 
 class Mqtt:
@@ -31,12 +32,13 @@ class Mqtt:
 
         self.state, self.confidence = 'OFF', 0
 
-    def set_state(self, state, confidence, image):
-        if state != self.state:
+    def set_state(self, state, confidence, image, force=False):
+        if state != self.state or force:
             self.client.publish(f"{self.base}/state", state)
 
-            if state == 'ON':
+            if state == 'ON' or force:
                 self.client.publish(self.basecam, image)
+
         if confidence != self.confidence:
             self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
         self.state, self.confidence = state, confidence
@@ -209,6 +211,7 @@ def handler(signum, frame):
 signal.signal(signal.SIGINT, handler)
 
 # for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
+first_frame = True
 while not stop:
 
     # Start timer (for calculating frame rate)
@@ -279,21 +282,32 @@ while not stop:
                 0.7, (0, 0, 0), 2
             )  # Draw label text
 
+    # Draw framerate in corner of frame
+    cv2.putText(frame, 'FPS: {0:.2f}'.format(frame_rate_calc), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
+
     if mqtt:
-        buf = None
+
+        force = False
+        # We provide the first image we get to home assistant
+        # to verify that we are running properly
+        if first_frame:
+            retval, buf = cv2.imencode('.jpg', frame)
+            buf = bytearray(buf)
+            first_frame = False
+            force = True
+        else:
+            buf = None
+
         if person_confidence > 0:
             state = 'ON'
             retval, buf = cv2.imencode('.jpg', frame)
             buf = bytearray(buf)
         else:
             state = 'OFF'
-        mqtt.set_state(state, person_confidence, buf)
-
-    # Draw framerate in corner of frame
-    cv2.putText(frame, 'FPS: {0:.2f}'.format(frame_rate_calc), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
+        mqtt.set_state(state, person_confidence, buf, force=force)
 
     # All the results have been drawn on the frame, so it's time to display it.
-    cv2.imshow('Object detector', frame)
+    # cv2.imshow('Object detector', frame)
 
     # Calculate framerate
     t2 = cv2.getTickCount()
@@ -301,8 +315,8 @@ while not stop:
     frame_rate_calc = 1 / time1
 
     # Press 'q' to quit
-    if cv2.waitKey(1) == ord('q'):
-        stop = True
+    # if cv2.waitKey(1) == ord('q'):
+    #    stop = True
 
 
 # Clean up
