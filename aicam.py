@@ -21,13 +21,20 @@ class Mqtt:
 
         self.base = base = f"homeassistant/binary_sensor/{name}"
         config_topic = f'{base}/config'
-        config_msg = f'{{"name": "{name}", "device_class": "motion", "state_topic": "{base}/state"}}'
+        config_msg = f'{{"name": "{name}", "device_class": "motion", "state_topic": "{base}/state", "json_attributes_topic": "{base}/attributes"}}'
 
         # print(config_topic, config_msg)
         client.publish(config_topic, config_msg)
 
-    def state(self, state, confidence):
-        self.client.publish(f"{self.base}/state", state)
+        self.state, self.confidence = 'OFF', 0
+
+    def set_state(self, state, confidence):
+        if state != self.state:
+            print(state, self.state, "differ. Sending")
+            self.client.publish(f"{self.base}/state", state)
+        if confidence != self.confidence:
+            self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
+        self.state, self.confidence = state, confidence
 
     def stop(self):
         self.client.publish(f"{self.base}/config", "")
@@ -241,9 +248,10 @@ while not stop:
 
             object_name = labels[int(classes[i])]
             # if object_name != 'person' or area < 2000 or area > 50000:
+            # Activate only if a person is detected
             if object_name != 'person':
-                pass
                 # continue
+                pass
 
             if scores[i] > person_confidence:
                 person_confidence = scores[1]
@@ -270,7 +278,7 @@ while not stop:
             state = 'ON'
         else:
             state = 'OFF'
-        mqtt.state(state, person_confidence)
+        mqtt.set_state(state, person_confidence)
 
     # Draw framerate in corner of frame
     cv2.putText(frame, 'FPS: {0:.2f}'.format(frame_rate_calc), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
