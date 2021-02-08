@@ -9,6 +9,21 @@ import numpy as np
 import time
 from threading import Thread
 import importlib.util
+import signal
+
+
+class Mqtt:
+    def __init__(self, host='localhost', port=1883, keepalive=60, bind_address="", name="aicam"):
+        import paho.mqtt.client as mqtt
+        self.client = client = mqtt.Client()
+
+        client.connect(host, port, keepalive, bind_address)
+
+        config_topic = f"homeassistant/binary_sensor/{name}/config"
+        config_msg = f"{{'name': '{name}', 'device_class': 'motion', 'state_topic': 'homeassistant/binary_sensor/{name}/state'}}"
+
+        print(config_topic, config_msg)
+        # client.publish(config_topic, config_msg)
 
 
 # Define VideoStream class to handle streaming of video from webcam in separate processing thread
@@ -20,6 +35,7 @@ class VideoStream:
         # Initialize the camera image stream
 
         # Important for cameras that don't properly report UDP transport
+        # Otherwise we get "Nonmatching transport in server reply" error
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
 
         self.stream = cv2.VideoCapture(STREAM_URL)
@@ -75,8 +91,13 @@ parser.add_argument('--resolution', help='Desired webcam resolution in WxH. If t
                     default='640x480')  # TODO The default resolution should be read from the streamed frame or the bounding boxes will be wrong!
 parser.add_argument('--edgetpu', help='Use Coral Edge TPU Accelerator to speed up detection',
                     action='store_true')
+parser.add_argument('--mqtt_host', help="Address of mqtt server to which state is published", default='')
+parser.add_argument('--mqtt_name', help="Name of binary_sensor device", default='aicam')
 
 args = parser.parse_args()
+
+if args.mqtt_host != '':
+    mqtt = Mqtt(args.mqtt_host, name=args.mqtt_name)
 
 MODEL_NAME = args.modeldir
 STREAM_URL = args.streamurl
@@ -155,8 +176,19 @@ freq = cv2.getTickFrequency()
 videostream = VideoStream(resolution=(imW, imH)).start()
 time.sleep(1)
 
+stop = False
+
+
+def handler(signum, frame):
+    global stop
+    print(f"Dentro de handler stop {stop}")
+    stop = True
+
+
+signal.signal(signal.SIGINT, handler)
+
 # for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
-while True:
+while not stop:
 
     # Start timer (for calculating frame rate)
     t1 = cv2.getTickCount()
@@ -227,7 +259,8 @@ while True:
 
     # Press 'q' to quit
     if cv2.waitKey(1) == ord('q'):
-        break
+        stop = True
+
 
 # Clean up
 cv2.destroyAllWindows()
