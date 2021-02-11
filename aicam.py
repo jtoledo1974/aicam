@@ -13,6 +13,7 @@ import signal
 import logging
 from datetime import datetime, timedelta
 
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s %(levelname)s %(message)s'
@@ -40,23 +41,37 @@ class Mqtt:
         logging.debug(f"Publish {config_topic} {config_msg}")
         client.publish(config_topic, config_msg)
 
-        self.state, self.confidence = 'OFF', 0
+        self.state, self.confidence, self.fps, self.image = 'OFF', 0, 0, None
 
-    def set_state(self, state, confidence, image, force=False):
+    def set_state(self, state, confidence, image=None, force=False):
 
-        if confidence != self.confidence:
-            logging.debug(f"Publish {self.base}/attributes {{'confidence': {confidence}}}")
-            self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
+        self.set_confidence(confidence)
+
+        if (state == 'ON' or force) and image:
+            self.set_image(image)
 
         if state != self.state or force:
             logging.debug(f"Publish {self.base}/state {state}")
             self.client.publish(f"{self.base}/state", state)
 
-        if state == 'ON' or force:
-            logging.debug(f"Publish {self.basecam} 'img_data'")
-            self.client.publish(self.basecam, image)
+        self.state = state
 
-        self.state, self.confidence = state, confidence
+    def set_image(self, image):
+        logging.debug(f"Publish {self.basecam} 'img_data'")
+        self.client.publish(self.basecam, image)
+
+    def set_confidence(self, confidence):
+        if confidence != self.confidence:
+            logging.debug(f"Publish {self.base}/attributes {{'confidence': {confidence}}}")
+            self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
+            self.confidence = confidence
+
+    def set_fps(self, fps):
+        self.set_state(self.state, self.confidence)
+        topic, value = f"{self.base}/attributes", f'{{"fps": {fps}}}'
+        logging.debug(f"Publish {topic} {value}")
+        self.client.publish(topic, value)
+        self.fps = fps
 
     def stop(self):
         self.client.publish(f"{self.base}/config", "")
@@ -210,6 +225,11 @@ input_std = 127.5
 frame_rate_calc = 1
 freq = cv2.getTickFrequency()
 
+# Initialize minute FPM average
+minute_frame_counter = 0
+fpm_last_reset = datetime.now()
+
+
 # Initialize video stream
 videostream = VideoStream(resolution=(imW, imH)).start()
 time.sleep(1)
@@ -228,11 +248,13 @@ signal.signal(signal.SIGINT, handler)
 # for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
 first_frame = True
 while not stop:
+    logging.debug("Top of while")
 
     # Start timer (for calculating frame rate)
     t1 = cv2.getTickCount()
 
     # Grab frame from video stream
+    logging.debug("Before frame read")
     frame1 = videostream.read()
 
     # Acquire frame and resize to expected shape [1xHxWx3]
@@ -246,9 +268,10 @@ while not stop:
         input_data = (np.float32(input_data) - input_mean) / input_std
 
     # Perform the actual detection by running the model with the image as input
+    logging.debug("Before detection")
     interpreter.set_tensor(input_details[0]['index'], input_data)
     interpreter.invoke()
-
+    logging.debug("After invoke")
     # Retrieve detection results
     boxes = interpreter.get_tensor(output_details[0]['index'])[0]  # Bounding box coordinates of detected objects
     classes = interpreter.get_tensor(output_details[1]['index'])[0]  # Class index of detected objects
@@ -258,6 +281,7 @@ while not stop:
     # Hold the highest confidence of person in image
     person_confidence = 0
 
+    logging.debug("Before looping for detections")
     # Loop over all detections and draw detection box if confidence is above minimum threshold
     for i in range(len(scores)):
         if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0)):
@@ -300,6 +324,34 @@ while not stop:
     # Draw framerate in corner of frame
     cv2.putText(frame, 'FPS: {0:.2f}'.format(frame_rate_calc), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
 
+    # All the results have been drawn on the frame, so it's time to display it.
+    # cv2.imshow('Object detector', frame)
+
+    # Calculate framerate
+    t2 = cv2.getTickCount()
+    time1 = (t2 - t1) / freq
+    frame_rate_calc = 1 / time1
+
+    # Calcultate average FPS in a minute
+    now = datetime.now()
+    seconds_passed = (now - fpm_last_reset).seconds
+    logging.debug((minute_frame_counter, now.second, seconds_passed))
+
+    if now.second == 0 and seconds_passed > 1:
+        fps_minute_average = minute_frame_counter / seconds_passed
+        minute_frame_counter = 0
+        fpm_last_reset = now
+        logging.debug(f"-------------------- Average FPS {fps_minute_average:.2f}")
+
+        if mqtt:
+            mqtt.set_fps(fps_minute_average)
+    minute_frame_counter += 1
+
+    # Press 'q' to quit
+    # if cv2.waitKey(1) == ord('q'):
+    #    stop = True
+
+    # Send results to home assistant
     if mqtt:
 
         force = False
@@ -320,18 +372,6 @@ while not stop:
         else:
             state = 'OFF'
         mqtt.set_state(state, person_confidence, buf, force=force)
-
-    # All the results have been drawn on the frame, so it's time to display it.
-    # cv2.imshow('Object detector', frame)
-
-    # Calculate framerate
-    t2 = cv2.getTickCount()
-    time1 = (t2 - t1) / freq
-    frame_rate_calc = 1 / time1
-
-    # Press 'q' to quit
-    # if cv2.waitKey(1) == ord('q'):
-    #    stop = True
 
 
 # Clean up
