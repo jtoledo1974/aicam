@@ -11,6 +11,12 @@ from threading import Thread
 import importlib.util
 import signal
 import logging
+from datetime import datetime, timedelta
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(message)s'
+)
 
 
 class Mqtt:
@@ -18,7 +24,9 @@ class Mqtt:
         import paho.mqtt.client as mqtt
         self.client = client = mqtt.Client()
 
+        client.enable_logger()
         client.connect(host, port, keepalive, bind_address)
+        client.loop_start()
 
         self.base = base = f"homeassistant/binary_sensor/{name}"
         config_topic = f'{base}/config'
@@ -28,19 +36,26 @@ class Mqtt:
         self.basecam = base = f"homeassistant/camera/aicam_{name}"
         config_topic = f'{base}/config'
         config_msg = f'{{"name": "aicam_{name}", "topic": "{base}"}}'
+
+        logging.debug(f"Publish {config_topic} {config_msg}")
         client.publish(config_topic, config_msg)
 
         self.state, self.confidence = 'OFF', 0
 
     def set_state(self, state, confidence, image, force=False):
-        if state != self.state or force:
-            self.client.publish(f"{self.base}/state", state)
-
-            if state == 'ON' or force:
-                self.client.publish(self.basecam, image)
 
         if confidence != self.confidence:
+            logging.debug(f"Publish {self.base}/attributes {{'confidence': {confidence}}}")
             self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
+
+        if state != self.state or force:
+            logging.debug(f"Publish {self.base}/state {state}")
+            self.client.publish(f"{self.base}/state", state)
+
+        if state == 'ON' or force:
+            logging.debug(f"Publish {self.basecam} 'img_data'")
+            self.client.publish(self.basecam, image)
+
         self.state, self.confidence = state, confidence
 
     def stop(self):
@@ -263,7 +278,7 @@ while not stop:
                 # pass
 
             if scores[i] > person_confidence:
-                person_confidence = scores[1]
+                person_confidence = scores[i]
 
             cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (10, 255, 0), 2)
 
