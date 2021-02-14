@@ -12,6 +12,7 @@ import importlib.util
 import signal
 import logging
 from datetime import datetime, timedelta
+from pathlib import PurePath
 
 
 logging.basicConfig(
@@ -89,7 +90,10 @@ class VideoStream:
         # Important for cameras that don't properly report UDP transport
         # Otherwise we get "Nonmatching transport in server reply" error
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+        self.resolution = resolution
+        self.connect(resolution)
 
+    def connect(self, resolution):
         self.stream = cv2.VideoCapture(STREAM_URL)
         self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         self.stream.set(3, resolution[0])
@@ -117,6 +121,11 @@ class VideoStream:
 
             # Otherwise, grab the next frame from the stream
             (self.grabbed, self.frame) = self.stream.read()
+
+            # In case of disconnect
+            if not self.grabbed:
+                self.stream.release()
+                self.connect(self.resolution)
 
     def read(self):
         # Return the most recent frame
@@ -149,8 +158,9 @@ parser.add_argument('--mqtt_name', help="Name of binary_sensor device", default=
 args = parser.parse_args()
 
 mqtt = None
+camera_name = args.mqtt_name
 if args.mqtt_host != '':
-    mqtt = Mqtt(args.mqtt_host, name=args.mqtt_name)
+    mqtt = Mqtt(args.mqtt_host, name=camera_name)
 
 MODEL_NAME = args.modeldir
 STREAM_URL = args.streamurl
@@ -247,6 +257,7 @@ signal.signal(signal.SIGINT, handler)
 
 # for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
 first_frame = True
+person_on_last = False
 while not stop:
     logging.debug("Top of while")
 
@@ -258,7 +269,12 @@ while not stop:
     frame1 = videostream.read()
 
     # Acquire frame and resize to expected shape [1xHxWx3]
-    frame = frame1.copy()
+    try:
+        frame = frame1.copy()
+    except AttributeError:
+        logging.debug("Failed to grab frame")
+        continue
+
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame_resized = cv2.resize(frame_rgb, (width, height))
     input_data = np.expand_dims(frame_resized, axis=0)
@@ -293,6 +309,8 @@ while not stop:
             xmin = int(max(1, (boxes[i][1] * imW)))
             ymax = int(min(imH, (boxes[i][2] * imH)))
             xmax = int(min(imW, (boxes[i][3] * imW)))
+            area = (xmax - xmin) * (ymax - ymin)
+            x, y = xmax - xmin, ymax - ymin
 
             object_name = labels[int(classes[i])]
             # if object_name != 'person' or area < 2000 or area > 50000:
@@ -300,6 +318,21 @@ while not stop:
             if object_name != 'person':
                 continue
                 # pass
+
+            # Hack para evitar la detección de la mesa como persona por la noche
+            false_positive = False
+            if camera_name == 'se':
+                if area > 93000:
+                   false_positive = True
+            elif camera_name == 'sw':
+                if ((240 < x < 280) and (210 < y < 270) and (53000 < area < 73000)) or \
+                   ((13 < x < 22) and (39 < y < 45) and (550 < area < 950)):  # Mesa y tronco, respectiv.
+                    false_positive = True
+            if false_positive:
+                # timestring = datetime.now().strftime("%Y-%m/%d-%H.%M.%S")
+                # cv2.imgwrite(f"/srv/camera/")
+                continue
+            logging.debug(f"X,Y = {x}, {y}; Area = {area};")
 
             if scores[i] > person_confidence:
                 person_confidence = scores[i]
@@ -369,8 +402,11 @@ while not stop:
             state = 'ON'
             retval, buf = cv2.imencode('.jpg', frame)
             buf = bytearray(buf)
+
+            person_on_last = True
         else:
             state = 'OFF'
+            person_on_last = False
         mqtt.set_state(state, person_confidence, buf, force=force)
 
 
