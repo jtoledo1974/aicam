@@ -322,7 +322,7 @@ while not stop:
             # Hack para evitar la detección de la mesa como persona por la noche
             false_positive = False
             if camera_name == 'se':
-                if area > 93000:
+                if area > 86000:
                    false_positive = True
             elif camera_name == 'sw':
                 if ((240 < x < 280) and (210 < y < 270) and (53000 < area < 73000)) or \
