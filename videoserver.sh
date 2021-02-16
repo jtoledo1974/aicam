@@ -4,6 +4,12 @@ LATENCY=$2
 PORT=$3
 HOST=127.0.0.1
 
+echo $URL
+echo
+echo $LATENCY
+echo
+echo $PORT
+
 if [ $# -eq 3 ]; then
 	COMMAND="gst-launch-1.0 rtspsrc latency=$LATENCY location=$URL name=rtspsrc ! rtph264depay ! h264parse config_interval=-1 ! mpegtsmux name=mux ! tcpserversink host=$HOST port=$PORT rtspsrc. ! rtpmp4gdepay ! aacparse ! mux."
 elif [ $# -eq 4 ]; then
