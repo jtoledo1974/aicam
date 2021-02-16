@@ -89,7 +89,7 @@ class VideoStream:
 
         # Important for cameras that don't properly report UDP transport
         # Otherwise we get "Nonmatching transport in server reply" error
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
         self.resolution = resolution
         self.connect(resolution)
 
