@@ -13,6 +13,8 @@ import signal
 import logging
 from datetime import datetime, timedelta
 from pathlib import PurePath
+import subprocess
+import threading
 
 
 logging.basicConfig(
@@ -26,7 +28,7 @@ class Mqtt:
         import paho.mqtt.client as mqtt
         self.client = client = mqtt.Client()
 
-        client.enable_logger()
+        # client.enable_logger()
         client.connect(host, port, keepalive, bind_address)
         client.loop_start()
 
@@ -39,7 +41,7 @@ class Mqtt:
         config_topic = f'{base}/config'
         config_msg = f'{{"name": "aicam_{name}", "topic": "{base}"}}'
 
-        logging.debug(f"Publish {config_topic} {config_msg}")
+        logging.info(f"Publish {config_topic} {config_msg}")
         client.publish(config_topic, config_msg)
 
         self.state, self.confidence, self.fps, self.image = 'OFF', 0, 0, None
@@ -52,18 +54,18 @@ class Mqtt:
             self.set_image(image)
 
         if state != self.state or force:
-            logging.debug(f"Publish {self.base}/state {state}")
+            logging.info(f"Publish {self.base}/state {state}")
             self.client.publish(f"{self.base}/state", state)
 
         self.state = state
 
     def set_image(self, image):
-        logging.debug(f"Publish {self.basecam} 'img_data'")
+        logging.info(f"Publish {self.basecam} 'img_data'")
         self.client.publish(self.basecam, image)
 
     def set_confidence(self, confidence):
         if confidence != self.confidence:
-            logging.debug(f"Publish {self.base}/attributes {{'confidence': {confidence}}}")
+            logging.info(f"Publish {self.base}/attributes {{'confidence': {confidence}}}")
             self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
             self.confidence = confidence
 
@@ -134,6 +136,45 @@ class VideoStream:
     def stop(self):
         # Indicate that the camera and thread should be stopped
         self.stopped = True
+
+
+class Videorecorder:
+    def __init__(self, port=5000, video_duration=20):
+        self.port = port
+        self.video_duration = video_duration
+        self.recording_process = None
+
+    def record_video(self, filename):
+        if not self.recording_process:
+            try:
+                os.makedirs(PurePath(filename).parent)
+            except FileExistsError:
+                pass
+
+            # self.video_file = open(f"{self.savedir}/{self.name}.ts", "w")
+            logging.info(f"Iniciando grabacion {filename}")
+            # cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! fdsink fd=2'
+            cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}'
+            self.recording_process = subprocess.Popen(cmd.split(" "))
+            self.timer = threading.Timer(self.video_duration, self.stop_recording)
+            self.timer.start()
+        else:
+            logging.info("Retrasando fin de grabacion")
+            self.timer.cancel()
+            self.timer = threading.Timer(self.video_duration, self.stop_recording)
+            self.timer.start()
+
+    def stop_recording(self, *args, **kwargs):
+        logging.info("Parando grabacion")
+        self.recording_process.terminate()
+        # self.recording_process.kill()
+        # self.video_file.close()
+        # self.video_file = self.recording_process = None
+
+    def terminate(self):
+        if self.recording_process:
+            self.timer.cancel()
+            self.stop_recording({})
 
 
 # Define and parse input arguments
@@ -244,6 +285,14 @@ fpm_last_reset = datetime.now()
 videostream = VideoStream(resolution=(imW, imH)).start()
 time.sleep(1)
 
+# Initialize video recorder
+if camera_name == 'sw':
+    port = 5000
+elif camera_name == 'se':
+    port = 5001
+recorder = Videorecorder(port=port)
+savedir = f"/srv/cameras/{camera_name}/video"
+
 stop = False
 
 
@@ -272,7 +321,7 @@ while not stop:
     try:
         frame = frame1.copy()
     except AttributeError:
-        logging.debug("Failed to grab frame")
+        logging.warning("Failed to grab frame")
         continue
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -380,9 +429,6 @@ while not stop:
             mqtt.set_fps(fps_minute_average)
     minute_frame_counter += 1
 
-    # Press 'q' to quit
-    # if cv2.waitKey(1) == ord('q'):
-    #    stop = True
 
     # Send results to home assistant
     if mqtt:
@@ -409,10 +455,20 @@ while not stop:
             person_on_last = False
         mqtt.set_state(state, person_confidence, buf, force=force)
 
+    # Record video
+    if person_confidence > 0:
+        timestring = datetime.now().strftime("%Y-%m/%d-%H.%M.%S")
+        video_filename = f"{savedir}/{timestring}.ts"
+        logging.info(f"Recording start of {video_filename}")
+        recorder.record_video(video_filename)
+
 
 # Clean up
 cv2.destroyAllWindows()
 videostream.stop()
+recorder.terminate()
 
 if mqtt:
     mqtt.stop()
+
+os._exit(0)
