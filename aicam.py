@@ -152,9 +152,11 @@ class Videorecorder:
                 pass
 
             # self.video_file = open(f"{self.savedir}/{self.name}.ts", "w")
+            # self.video_logfile = open(f"video_{self.name}.log", "a")
             logging.info(f"Iniciando grabacion {filename}")
             # cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! fdsink fd=2'
             cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}'
+            # self.recording_process = subprocess.Popen(cmd.split(" "), stdout=self.video_logfile, stderr=self.video_logfile)
             self.recording_process = subprocess.Popen(cmd.split(" "))
             self.timer = threading.Timer(self.video_duration, self.stop_recording)
             self.timer.start()
@@ -169,7 +171,8 @@ class Videorecorder:
         self.recording_process.terminate()
         # self.recording_process.kill()
         # self.video_file.close()
-        # self.video_file = self.recording_process = None
+        # self.video_logfile.close()
+        self.video_file = self.recording_process = None
 
     def terminate(self):
         if self.recording_process:
@@ -459,7 +462,6 @@ while not stop:
     if person_confidence > 0:
         timestring = datetime.now().strftime("%Y-%m/%d-%H.%M.%S")
         video_filename = f"{savedir}/{timestring}.ts"
-        logging.info(f"Recording start of {video_filename}")
         recorder.record_video(video_filename)
 
 
