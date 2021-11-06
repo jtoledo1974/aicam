@@ -18,3 +18,5 @@ source tflite_venv/bin/activate
 pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite_runtime
 pip install paho.mqtt
 
+Models can be downloaded from https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf1_detection_zoo.md#mobile-models
+
