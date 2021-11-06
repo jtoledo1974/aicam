@@ -18,7 +18,7 @@ import threading
 
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s'
 )
 
@@ -32,9 +32,9 @@ class Mqtt:
         client.connect(host, port, keepalive, bind_address)
         client.loop_start()
 
-        self.base = base = f"homeassistant/binary_sensor/{name}"
+        self.base = base = f"homeassistant/binary_sensor/motion_aicam_{name}"
         config_topic = f'{base}/config'
-        config_msg = f'{{"name": "{name}", "device_class": "motion", "json_attributes_topic": "{base}/attributes", "state_topic": "{base}/state"}}'
+        config_msg = f'{{"name": "motion_aicam_{name}", "device_class": "motion", "json_attributes_topic": "{base}/attributes", "state_topic": "{base}/state"}}'
         client.publish(config_topic, config_msg)
 
         self.basecam = base = f"homeassistant/camera/aicam_{name}"
@@ -77,7 +77,10 @@ class Mqtt:
         self.fps = fps
 
     def stop(self):
-        self.client.publish(f"{self.base}/config", "")
+        pass
+        # We avoid deleting the configuration entries so that we keep the last
+        # known values when we stop the program
+        # self.client.publish(f"{self.base}/config", "")
         self.client.publish(f"{self.basecam}/config", "")
 
 
@@ -93,11 +96,14 @@ class VideoStream:
         # Otherwise we get "Nonmatching transport in server reply" error
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
         self.resolution = resolution
+        self.lock = threading.Lock()
         self.connect(resolution)
 
     def connect(self, resolution):
         self.stream = cv2.VideoCapture(STREAM_URL)
-        self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        if not self.stream.isOpened():
+            raise ConnectionError
+        # self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         self.stream.set(3, resolution[0])
         self.stream.set(4, resolution[1])
 
@@ -109,7 +115,8 @@ class VideoStream:
 
     def start(self):
         # Start the thread that reads frames from the video stream
-        Thread(target=self.update, args=()).start()
+        self.update_thread = Thread(target=self.update, args=())
+        self.update_thread.start()
         return self
 
     def update(self):
@@ -117,6 +124,7 @@ class VideoStream:
         while True:
             # If the camera is stopped, stop the thread
             if self.stopped:
+                logging.debug("Releasing stream")
                 # Close camera resources
                 self.stream.release()
                 return
@@ -126,6 +134,7 @@ class VideoStream:
 
             # In case of disconnect
             if not self.grabbed:
+                logging.warning("Failed to grab frame. Possible disconnect")
                 self.stream.release()
                 self.connect(self.resolution)
 
@@ -136,6 +145,7 @@ class VideoStream:
     def stop(self):
         # Indicate that the camera and thread should be stopped
         self.stopped = True
+        self.update_thread.join()
 
 
 class Videorecorder:
@@ -146,21 +156,27 @@ class Videorecorder:
 
     def record_video(self, filename):
         if not self.recording_process:
+
+            self.filename = filename
+
+            # Create parent folder if nonexistent
             try:
                 os.makedirs(PurePath(filename).parent)
             except FileExistsError:
                 pass
 
-            # self.video_file = open(f"{self.savedir}/{self.name}.ts", "w")
-            # self.video_logfile = open(f"video_{self.name}.log", "a")
+            # Stream ts from server to file
             logging.info(f"Iniciando grabacion {filename}")
-            # cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! fdsink fd=2'
             cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}'
-            # self.recording_process = subprocess.Popen(cmd.split(" "), stdout=self.video_logfile, stderr=self.video_logfile)
             self.recording_process = subprocess.Popen(cmd.split(" "))
+
+            # Start time to cancel recording
             self.timer = threading.Timer(self.video_duration, self.stop_recording)
             self.timer.start()
+
         else:
+
+            # Already recording. Delay end of recording
             logging.info("Retrasando fin de grabacion")
             self.timer.cancel()
             self.timer = threading.Timer(self.video_duration, self.stop_recording)
@@ -169,10 +185,18 @@ class Videorecorder:
     def stop_recording(self, *args, **kwargs):
         logging.info("Parando grabacion")
         self.recording_process.terminate()
-        # self.recording_process.kill()
-        # self.video_file.close()
-        # self.video_logfile.close()
-        self.video_file = self.recording_process = None
+        try:
+            self.recording_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            logging.error(("Did not terminate", self.recording_process))
+        self.recording_process = None
+
+        # Transcode to mp4
+        old_fn = PurePath(self.filename)
+        new_fn = old_fn.parent / (old_fn.stem + '.mp4')
+        cmd = f"ffmpeg -i {old_fn} -c copy {new_fn} && rm {old_fn}"
+        logging.info(cmd)
+        logging.info(subprocess.run(cmd, shell=True))
 
     def terminate(self):
         if self.recording_process:
@@ -285,6 +309,7 @@ fpm_last_reset = datetime.now()
 
 
 # Initialize video stream
+logging.debug("Initializing VideoStream")
 videostream = VideoStream(resolution=(imW, imH)).start()
 time.sleep(1)
 
@@ -293,6 +318,7 @@ if camera_name == 'sw':
     port = 5000
 elif camera_name == 'se':
     port = 5001
+logging.debug("Initializing Videorecorder")
 recorder = Videorecorder(port=port)
 savedir = f"/srv/cameras/{camera_name}/video"
 
@@ -311,7 +337,11 @@ signal.signal(signal.SIGINT, handler)
 first_frame = True
 person_on_last = False
 while not stop:
-    logging.debug("Top of while")
+    logging.debug("Top of while 2")
+
+    # time.sleep(1)
+    # continue
+    # logging.error("Dentro del while!!")
 
     # Start timer (for calculating frame rate)
     t1 = cv2.getTickCount()
@@ -466,8 +496,9 @@ while not stop:
 
 
 # Clean up
-cv2.destroyAllWindows()
+logging.debug("Cleaning up")
 videostream.stop()
+cv2.destroyAllWindows()
 recorder.terminate()
 
 if mqtt:
