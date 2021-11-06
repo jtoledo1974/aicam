@@ -10,4 +10,11 @@ python aicam.py --modeldir ../tflite1/ssdlite_mobiledet_cpu_320x320_coco_2020_05
         | egrep --color=auto "INFO|h264"
 
 Meant to be used with tflite, as per https://github.com/EdjeElectronics/TensorFlow-Lite-Object-Detection-on-Android-and-Raspberry-Pi/blob/master/Raspberry_Pi_Guide.md
-Dependencies are as per that project's get_pi_requirements.sh file
+
+Dependencies on raspbian os 64bit:
+apt install python3-opencv 
+python3 -m venv --system-site-packages tflite_venv
+source tflite_venv/bin/activate
+pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite_runtime
+pip install paho.mqtt
+
