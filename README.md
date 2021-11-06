@@ -9,3 +9,5 @@ python aicam.py --modeldir ../tflite1/ssdlite_mobiledet_cpu_320x320_coco_2020_05
         & tail -f se.log
         | egrep --color=auto "INFO|h264"
 
+Meant to be used with tflite, as per https://github.com/EdjeElectronics/TensorFlow-Lite-Object-Detection-on-Android-and-Raspberry-Pi/blob/master/Raspberry_Pi_Guide.md
+Dependencies are as per that project's get_pi_requirements.sh file
