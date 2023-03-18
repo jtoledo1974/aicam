@@ -17,15 +17,15 @@ import subprocess
 import threading
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 class Mqtt:
-    def __init__(self, host='localhost', port=1883, keepalive=60, bind_address="", name="aicam"):
+    def __init__(
+        self, host="localhost", port=1883, keepalive=60, bind_address="", name="aicam"
+    ):
         import paho.mqtt.client as mqtt
+
         self.client = client = mqtt.Client()
 
         # client.enable_logger()
@@ -33,24 +33,23 @@ class Mqtt:
         client.loop_start()
 
         self.base = base = f"homeassistant/binary_sensor/motion_aicam_{name}"
-        config_topic = f'{base}/config'
+        config_topic = f"{base}/config"
         config_msg = f'{{"name": "motion_aicam_{name}", "device_class": "motion", "json_attributes_topic": "{base}/attributes", "state_topic": "{base}/state"}}'
         client.publish(config_topic, config_msg)
 
         self.basecam = base = f"homeassistant/camera/aicam_{name}"
-        config_topic = f'{base}/config'
+        config_topic = f"{base}/config"
         config_msg = f'{{"name": "aicam_{name}", "topic": "{base}"}}'
 
         logging.info(f"Publish {config_topic} {config_msg}")
         client.publish(config_topic, config_msg)
 
-        self.state, self.confidence, self.fps, self.image = 'OFF', 0, 0, None
+        self.state, self.confidence, self.fps, self.image = "OFF", 0, 0, None
 
     def set_state(self, state, confidence, image=None, force=False):
-
         self.set_confidence(confidence)
 
-        if (state == 'ON' or force) and image:
+        if (state == "ON" or force) and image:
             self.set_image(image)
 
         if state != self.state or force:
@@ -65,8 +64,12 @@ class Mqtt:
 
     def set_confidence(self, confidence):
         if confidence != self.confidence:
-            logging.info(f"Publish {self.base}/attributes {{'confidence': {confidence}}}")
-            self.client.publish(f"{self.base}/attributes", f'{{"confidence": {confidence}}}')
+            logging.info(
+                f"Publish {self.base}/attributes {{'confidence': {confidence}}}"
+            )
+            self.client.publish(
+                f"{self.base}/attributes", f'{{"confidence": {confidence}}}'
+            )
             self.confidence = confidence
 
     def set_fps(self, fps):
@@ -110,7 +113,7 @@ class VideoStream:
         # Read first frame from the stream
         (self.grabbed, self.frame) = self.stream.read()
 
-    # Variable to control when the camera is stopped
+        # Variable to control when the camera is stopped
         self.stopped = False
 
     def start(self):
@@ -156,7 +159,6 @@ class Videorecorder:
 
     def record_video(self, filename):
         if not self.recording_process:
-
             self.filename = filename
 
             # Create parent folder if nonexistent
@@ -167,7 +169,7 @@ class Videorecorder:
 
             # Stream ts from server to file
             logging.info(f"Iniciando grabacion {filename}")
-            cmd = f'/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}'
+            cmd = f"/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}"
             self.recording_process = subprocess.Popen(cmd.split(" "))
 
             # Start time to cancel recording
@@ -175,7 +177,6 @@ class Videorecorder:
             self.timer.start()
 
         else:
-
             # Already recording. Delay end of recording
             logging.info("Retrasando fin de grabacion")
             self.timer.cancel()
@@ -193,7 +194,7 @@ class Videorecorder:
 
         # Transcode to mp4
         old_fn = PurePath(self.filename)
-        new_fn = old_fn.parent / (old_fn.stem + '.mp4')
+        new_fn = old_fn.parent / (old_fn.stem + ".mp4")
         cmd = f"ffmpeg -i {old_fn} -c copy {new_fn} && rm {old_fn}"
         logging.info(cmd)
         logging.info(subprocess.run(cmd, shell=True))
@@ -206,28 +207,49 @@ class Videorecorder:
 
 # Define and parse input arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--modeldir', help='Folder the .tflite file is located in',
-                    required=True)
-parser.add_argument('--streamurl', help='The full URL of the video stream e.g. http://ipaddress:port/stream/video.mjpeg',
-                    required=True)
-parser.add_argument('--graph', help='Name of the .tflite file, if different than detect.tflite',
-                    default='detect.tflite')
-parser.add_argument('--labels', help='Name of the labelmap file, if different than labelmap.txt',
-                    default='labelmap.txt')
-parser.add_argument('--threshold', help='Minimum confidence threshold for displaying detected objects',
-                    default=0.5)
-parser.add_argument('--resolution', help='Desired webcam resolution in WxH. If the webcam does not support the resolution entered, errors may occur.',
-                    default='640x480')  # TODO The default resolution should be read from the streamed frame or the bounding boxes will be wrong!
-parser.add_argument('--edgetpu', help='Use Coral Edge TPU Accelerator to speed up detection',
-                    action='store_true')
-parser.add_argument('--mqtt_host', help="Address of mqtt server to which state is published", default='')
-parser.add_argument('--mqtt_name', help="Name of binary_sensor device", default='aicam')
+parser.add_argument(
+    "--modeldir", help="Folder the .tflite file is located in", required=True
+)
+parser.add_argument(
+    "--streamurl",
+    help="The full URL of the video stream e.g. http://ipaddress:port/stream/video.mjpeg",
+    required=True,
+)
+parser.add_argument(
+    "--graph",
+    help="Name of the .tflite file, if different than detect.tflite",
+    default="detect.tflite",
+)
+parser.add_argument(
+    "--labels",
+    help="Name of the labelmap file, if different than labelmap.txt",
+    default="labelmap.txt",
+)
+parser.add_argument(
+    "--threshold",
+    help="Minimum confidence threshold for displaying detected objects",
+    default=0.5,
+)
+parser.add_argument(
+    "--resolution",
+    help="Desired webcam resolution in WxH. If the webcam does not support the resolution entered, errors may occur.",
+    default="640x480",
+)  # TODO The default resolution should be read from the streamed frame or the bounding boxes will be wrong!
+parser.add_argument(
+    "--edgetpu",
+    help="Use Coral Edge TPU Accelerator to speed up detection",
+    action="store_true",
+)
+parser.add_argument(
+    "--mqtt_host", help="Address of mqtt server to which state is published", default=""
+)
+parser.add_argument("--mqtt_name", help="Name of binary_sensor device", default="aicam")
 
 args = parser.parse_args()
 
 mqtt = None
 camera_name = args.mqtt_name
-if args.mqtt_host != '':
+if args.mqtt_host != "":
     mqtt = Mqtt(args.mqtt_host, name=camera_name)
 
 MODEL_NAME = args.modeldir
@@ -235,28 +257,30 @@ STREAM_URL = args.streamurl
 GRAPH_NAME = args.graph
 LABELMAP_NAME = args.labels
 min_conf_threshold = float(args.threshold)
-resW, resH = args.resolution.split('x')
+resW, resH = args.resolution.split("x")
 imW, imH = int(resW), int(resH)
 use_TPU = args.edgetpu
 
 # Import TensorFlow libraries
 # If tflite_runtime is installed, import interpreter from tflite_runtime, else import from regular tensorflow
 # If using Coral Edge TPU, import the load_delegate library
-pkg = importlib.util.find_spec('tflite_runtime')
+pkg = importlib.util.find_spec("tflite_runtime")
 if pkg:
     from tflite_runtime.interpreter import Interpreter
+
     if use_TPU:
         from tflite_runtime.interpreter import load_delegate
 else:
     from tensorflow.lite.python.interpreter import Interpreter
+
     if use_TPU:
         from tensorflow.lite.python.interpreter import load_delegate
 
 # If using Edge TPU, assign filename for Edge TPU model
 if use_TPU:
     # If user has specified the name of the .tflite file, use that name, otherwise use default 'edgetpu.tflite'
-    if (GRAPH_NAME == 'detect.tflite'):
-        GRAPH_NAME = 'edgetpu.tflite'
+    if GRAPH_NAME == "detect.tflite":
+        GRAPH_NAME = "edgetpu.tflite"
 
 # Get path to current working directory
 CWD_PATH = os.getcwd()
@@ -268,7 +292,7 @@ PATH_TO_CKPT = os.path.join(CWD_PATH, MODEL_NAME, GRAPH_NAME)
 PATH_TO_LABELS = os.path.join(CWD_PATH, MODEL_NAME, LABELMAP_NAME)
 
 # Load the label map
-with open(PATH_TO_LABELS, 'r') as f:
+with open(PATH_TO_LABELS, "r") as f:
     labels = [line.strip() for line in f.readlines()]
 
 # Labels are officially listed in https://raw.githubusercontent.com/tensorflow/models/master/research/object_detection/data/mscoco_label_map.pbtxt
@@ -276,14 +300,16 @@ with open(PATH_TO_LABELS, 'r') as f:
 # Have to do a weird fix for label map if using the COCO "starter model" from
 # https://www.tensorflow.org/lite/models/object_detection/overview
 # First label is '???', which has to be removed.
-if labels[0] == '???':
-    del(labels[0])
+if labels[0] == "???":
+    del labels[0]
 
 # Load the Tensorflow Lite model.
 # If using Edge TPU, use special load_delegate argument
 if use_TPU:
-    interpreter = Interpreter(model_path=PATH_TO_CKPT,
-                              experimental_delegates=[load_delegate('libedgetpu.so.1.0')])
+    interpreter = Interpreter(
+        model_path=PATH_TO_CKPT,
+        experimental_delegates=[load_delegate("libedgetpu.so.1.0")],
+    )
     print(PATH_TO_CKPT)
 else:
     interpreter = Interpreter(model_path=PATH_TO_CKPT)
@@ -293,10 +319,10 @@ interpreter.allocate_tensors()
 # Get model details
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
-height = input_details[0]['shape'][1]
-width = input_details[0]['shape'][2]
+height = input_details[0]["shape"][1]
+width = input_details[0]["shape"][2]
 
-floating_model = (input_details[0]['dtype'] == np.float32)
+floating_model = input_details[0]["dtype"] == np.float32
 
 input_mean = 127.5
 input_std = 127.5
@@ -316,9 +342,9 @@ videostream = VideoStream(resolution=(imW, imH)).start()
 time.sleep(1)
 
 # Initialize video recorder
-if camera_name == 'sw':
+if camera_name == "sw":
     port = 5000
-elif camera_name == 'se':
+elif camera_name == "se":
     port = 5001
 logging.debug("Initializing Videorecorder")
 recorder = Videorecorder(port=port)
@@ -369,13 +395,19 @@ while not stop:
 
     # Perform the actual detection by running the model with the image as input
     logging.debug("Before detection")
-    interpreter.set_tensor(input_details[0]['index'], input_data)
+    interpreter.set_tensor(input_details[0]["index"], input_data)
     interpreter.invoke()
     logging.debug("After invoke")
     # Retrieve detection results
-    boxes = interpreter.get_tensor(output_details[0]['index'])[0]  # Bounding box coordinates of detected objects
-    classes = interpreter.get_tensor(output_details[1]['index'])[0]  # Class index of detected objects
-    scores = interpreter.get_tensor(output_details[2]['index'])[0]  # Confidence of detected objects
+    boxes = interpreter.get_tensor(output_details[0]["index"])[
+        0
+    ]  # Bounding box coordinates of detected objects
+    classes = interpreter.get_tensor(output_details[1]["index"])[
+        0
+    ]  # Class index of detected objects
+    scores = interpreter.get_tensor(output_details[2]["index"])[
+        0
+    ]  # Confidence of detected objects
     # num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
 
     # Hold the highest confidence of person in image
@@ -384,8 +416,7 @@ while not stop:
     logging.debug("Before looping for detections")
     # Loop over all detections and draw detection box if confidence is above minimum threshold
     for i in range(len(scores)):
-        if ((scores[i] > min_conf_threshold) and (scores[i] <= 1.0)):
-
+        if (scores[i] > min_conf_threshold) and (scores[i] <= 1.0):
             # Get bounding box coordinates and draw box
             # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
             # print(imW, imH, boxes[1])
@@ -399,18 +430,19 @@ while not stop:
             object_name = labels[int(classes[i])]
             # if object_name != 'person' or area < 2000 or area > 50000:
             # Activate only if a person is detected
-            if object_name != 'person':
+            if object_name != "person":
                 continue
                 # pass
 
             # Hack para evitar la detección de la mesa como persona por la noche
             false_positive = False
-            if camera_name == 'se':
+            if camera_name == "se":
                 if area > 86000:
-                   false_positive = True
-            elif camera_name == 'sw':
-                if ((240 < x < 280) and (210 < y < 270) and (53000 < area < 73000)) or \
-                   ((13 < x < 22) and (39 < y < 45) and (550 < area < 950)):  # Mesa y tronco, respectiv.
+                    false_positive = True
+            elif camera_name == "sw":
+                if ((240 < x < 280) and (210 < y < 270) and (53000 < area < 73000)) or (
+                    (13 < x < 22) and (39 < y < 45) and (550 < area < 950)
+                ):  # Mesa y tronco, respectiv.
                     false_positive = True
             if false_positive:
                 # timestring = datetime.now().strftime("%Y-%m/%d-%H.%M.%S")
@@ -424,22 +456,44 @@ while not stop:
             cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), (10, 255, 0), 2)
 
             # Draw label
-            label = '%s: %d%%' % (object_name, int(scores[i] * 100))  # Example: 'person: 72%'
-            labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)  # Get font size
-            label_ymin = max(ymin, labelSize[1] + 10)  # Make sure not to draw label too close to top of window
+            label = "%s: %d%%" % (
+                object_name,
+                int(scores[i] * 100),
+            )  # Example: 'person: 72%'
+            labelSize, baseLine = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2
+            )  # Get font size
+            label_ymin = max(
+                ymin, labelSize[1] + 10
+            )  # Make sure not to draw label too close to top of window
             cv2.rectangle(
                 frame,
                 (xmin, label_ymin - labelSize[1] - 10),
                 (xmin + labelSize[0], label_ymin + baseLine - 10),
-                (255, 255, 255), cv2.FILLED
+                (255, 255, 255),
+                cv2.FILLED,
             )  # Draw white box to put label text in
             cv2.putText(
-                frame, label, (xmin, label_ymin - 7), cv2.FONT_HERSHEY_SIMPLEX,
-                0.7, (0, 0, 0), 2
+                frame,
+                label,
+                (xmin, label_ymin - 7),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 0),
+                2,
             )  # Draw label text
 
     # Draw framerate in corner of frame
-    cv2.putText(frame, 'FPS: {0:.2f}'.format(frame_rate_calc), (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2, cv2.LINE_AA)
+    cv2.putText(
+        frame,
+        "FPS: {0:.2f}".format(frame_rate_calc),
+        (30, 50),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,
+        (255, 255, 0),
+        2,
+        cv2.LINE_AA,
+    )
 
     # All the results have been drawn on the frame, so it's time to display it.
     # cv2.imshow('Object detector', frame)
@@ -464,15 +518,13 @@ while not stop:
             mqtt.set_fps(fps_minute_average)
     minute_frame_counter += 1
 
-
     # Send results to home assistant
     if mqtt:
-
         force = False
         # We provide the first image we get to home assistant
         # to verify that we are running properly
         if first_frame:
-            retval, buf = cv2.imencode('.jpg', frame)
+            retval, buf = cv2.imencode(".jpg", frame)
             buf = bytearray(buf)
             first_frame = False
             force = True
@@ -480,13 +532,13 @@ while not stop:
             buf = None
 
         if person_confidence > 0:
-            state = 'ON'
-            retval, buf = cv2.imencode('.jpg', frame)
+            state = "ON"
+            retval, buf = cv2.imencode(".jpg", frame)
             buf = bytearray(buf)
 
             person_on_last = True
         else:
-            state = 'OFF'
+            state = "OFF"
             person_on_last = False
         mqtt.set_state(state, person_confidence, buf, force=force)
 
