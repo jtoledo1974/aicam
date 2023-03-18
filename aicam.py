@@ -13,15 +13,15 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path, PurePath
+from pathlib import Path
 from threading import Thread
 
 import cv2
 import numpy as np
 
-# ruff: noqa: ANN001, ANN201, D102, DTZ005, FBT002, G004, PLR2004, N816
+# ruff: noqa: ANN001, ANN201, D102, DTZ005, FBT002, PLR2004
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 @dataclass
@@ -75,19 +75,19 @@ class Mqtt:
             self.set_image(image)
 
         if state != self.state or force:
-            logging.info(f"Publish {self.base}/state {state}")
+            logging.info("Publish %s %s", f"{self.base}/state", state)
             self.client.publish(f"{self.base}/state", state)
 
         self.state = state
 
     def set_image(self, image):
-        logging.info(f"Publish {self.basecam} 'img_data'")
+        logging.info("Publish %s 'img_data'", self.basecam)
         self.client.publish(self.basecam, image)
 
     def set_confidence(self, confidence):
         if confidence != self.confidence:
             logging.info(
-                f"Publish {self.base}/attributes {{'confidence': {confidence}}}"
+                "Publish %s {'confidence': %s}", f"{self.base}/attributes", confidence
             )
             self.client.publish(
                 f"{self.base}/attributes", f'{{"confidence": {confidence}}}'
@@ -97,7 +97,7 @@ class Mqtt:
     def set_fps(self, fps):
         self.set_state(self.state, self.confidence)
         topic, value = f"{self.base}/attributes", f'{{"fps": {fps}}}'
-        logging.debug(f"Publish {topic} {value}")
+        logging.debug("Publish %s %s", topic, value)
         self.client.publish(topic, value)
         self.fps = fps
 
@@ -185,10 +185,10 @@ class Videorecorder:
 
             # Create parent folder if nonexistent
             with suppress(FileExistsError):
-                PurePath(filename).parent.mkdir(parents=True)
+                Path(filename).parent.mkdir(parents=True)
 
             # Stream ts from server to file
-            logging.info(f"Iniciando grabacion {filename}")
+            logging.info("Starting recording %s", filename)
             cmd = f"/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}"
             self.recording_process = subprocess.Popen(cmd.split(" "))
 
@@ -213,7 +213,7 @@ class Videorecorder:
         self.recording_process = None
 
         # Transcode to mp4
-        old_fn = PurePath(self.filename)
+        old_fn = Path(self.filename)
         new_fn = old_fn.parent / (old_fn.stem + ".mp4")
         cmd = f"ffmpeg -i {old_fn} -c copy {new_fn} && rm {old_fn}"
         logging.info(cmd)
@@ -278,9 +278,9 @@ STREAM_URL = args.streamurl
 GRAPH_NAME: str = args.graph
 LABELMAP_NAME: str = args.labels
 min_conf_threshold = float(args.threshold)
-resW, resH = args.resolution.split("x")
-imW, imH = int(resW), int(resH)
-use_TPU = args.edgetpu
+res_width, res_height = args.resolution.split("x")
+img_width, img_height = int(res_width), int(res_height)
+use_tpu = args.edgetpu
 
 # Import TensorFlow libraries
 # If tflite_runtime is installed, import interpreter from tflite_runtime, else import from regular tensorflow
@@ -289,16 +289,16 @@ pkg = importlib.util.find_spec("tflite_runtime")
 if pkg:
     from tflite_runtime.interpreter import Interpreter
 
-    if use_TPU:
+    if use_tpu:
         from tflite_runtime.interpreter import load_delegate
 else:
     from tensorflow.lite.python.interpreter import Interpreter
 
-    if use_TPU:
+    if use_tpu:
         from tensorflow.lite.python.interpreter import load_delegate
 
 # If using Edge TPU, assign filename for Edge TPU model
-if use_TPU and GRAPH_NAME == "detect.tflite":
+if use_tpu and GRAPH_NAME == "detect.tflite":
     # If user has specified the name of the .tflite file, use that name, otherwise use default 'edgetpu.tflite'
     GRAPH_NAME = "edgetpu.tflite"
 
@@ -325,7 +325,7 @@ if labels[0] == "???":
 
 # Load the Tensorflow Lite model.
 # If using Edge TPU, use special load_delegate argument
-if use_TPU:
+if use_tpu:
     interpreter = Interpreter(
         model_path=str(PATH_TO_CKPT),
         experimental_delegates=[load_delegate("libedgetpu.so.1.0")],
@@ -358,7 +358,7 @@ fpm_last_reset = datetime.now()
 
 # Initialize video stream
 logging.debug("Initializing VideoStream")
-videostream = VideoStream(resolution=(imW, imH)).start()
+videostream = VideoStream(resolution=(img_width, img_height)).start()
 time.sleep(1)
 
 # Initialize video recorder
@@ -435,10 +435,10 @@ while not stop:
         if (scores[i] > min_conf_threshold) and (scores[i] <= 1.0):
             # Get bounding box coordinates and draw box
             # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
-            ymin = int(max(1, (boxes[i][0] * imH)))
-            xmin = int(max(1, (boxes[i][1] * imW)))
-            ymax = int(min(imH, (boxes[i][2] * imH)))
-            xmax = int(min(imW, (boxes[i][3] * imW)))
+            ymin = int(max(1, (boxes[i][0] * img_height)))
+            xmin = int(max(1, (boxes[i][1] * img_width)))
+            ymax = int(min(img_height, (boxes[i][2] * img_height)))
+            xmax = int(min(img_width, (boxes[i][3] * img_width)))
             area = (xmax - xmin) * (ymax - ymin)
             x, y = xmax - xmin, ymax - ymin
 
@@ -461,7 +461,7 @@ while not stop:
                 false_positive = True
             if false_positive:
                 continue
-            logging.debug(f"X,Y = {x}, {y}; Area = {area};")
+            logging.debug("X,Y = %s, %s; Area = %s;", x, y, area)
 
             if scores[i] > person_confidence:
                 person_confidence = scores[i]
@@ -473,16 +473,16 @@ while not stop:
                 object_name,
                 int(scores[i] * 100),
             )  # Example: 'person: 72%'
-            labelSize, baseLine = cv2.getTextSize(
+            label_size, base_line = cv2.getTextSize(
                 label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2
             )  # Get font size
             label_ymin = max(
-                ymin, labelSize[1] + 10
+                ymin, label_size[1] + 10
             )  # Make sure not to draw label too close to top of window
             cv2.rectangle(
                 frame,
-                (xmin, label_ymin - labelSize[1] - 10),
-                (xmin + labelSize[0], label_ymin + baseLine - 10),
+                (xmin, label_ymin - label_size[1] - 10),
+                (xmin + label_size[0], label_ymin + base_line - 10),
                 (255, 255, 255),
                 cv2.FILLED,
             )  # Draw white box to put label text in
