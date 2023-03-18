@@ -10,21 +10,44 @@ import signal
 import subprocess
 import threading
 import time
+from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from threading import Thread
 
 import cv2
 import numpy as np
 
+# ruff: noqa: ANN001, ANN201, D102, DTZ005, FBT002, G004, PLR2004, N816
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
+@dataclass
+class MqttConnection:
+    """MQTT connection parameters."""
+
+    host: str = "localhost"
+    port: int = 1883
+    keepalive: int = 60
+    bind_address: str = ""
+    name: str = "aicam"
+
+
 class Mqtt:
-    def __init__(
-        self, host="localhost", port=1883, keepalive=60, bind_address="", name="aicam"
-    ):
+    """MQTT client wrapper."""
+
+    def __init__(self, conn_data: MqttConnection):
         import paho.mqtt.client as mqtt
+
+        host, port, keepalive, bind_address, name = (
+            conn_data.host,
+            conn_data.port,
+            conn_data.keepalive,
+            conn_data.bind_address,
+            conn_data.name,
+        )
 
         self.client = client = mqtt.Client()
 
@@ -40,7 +63,7 @@ class Mqtt:
         config_topic = f"{base}/config"
         config_msg = f'{{"name": "aicam_{name}", "topic": "{base}"}}'
 
-        logging.info(f"Publish {config_topic} {config_msg}")
+        logging.info("Publish %s %s", config_topic, config_msg)
         client.publish(config_topic, config_msg)
 
         self.state, self.confidence, self.fps, self.image = "OFF", 0, 0, None
@@ -149,6 +172,8 @@ class VideoStream:
 
 
 class Videorecorder:
+    """Class to record video from a stream."""
+
     def __init__(self, port=5000, video_duration=20):
         self.port = port
         self.video_duration = video_duration
@@ -159,10 +184,8 @@ class Videorecorder:
             self.filename = filename
 
             # Create parent folder if nonexistent
-            try:
-                os.makedirs(PurePath(filename).parent)
-            except FileExistsError:
-                pass
+            with suppress(FileExistsError):
+                PurePath(filename).parent.mkdir(parents=True)
 
             # Stream ts from server to file
             logging.info(f"Iniciando grabacion {filename}")
@@ -180,13 +203,13 @@ class Videorecorder:
             self.timer = threading.Timer(self.video_duration, self.stop_recording)
             self.timer.start()
 
-    def stop_recording(self, *args, **kwargs):
+    def stop_recording(self, *_args, **_kwargs):
         logging.info("Parando grabacion")
         self.recording_process.terminate()
         try:
             self.recording_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
-            logging.error(("Did not terminate", self.recording_process))
+            logging.exception(("Did not terminate", self.recording_process))
         self.recording_process = None
 
         # Transcode to mp4
@@ -247,12 +270,13 @@ args = parser.parse_args()
 mqtt = None
 camera_name = args.mqtt_name
 if args.mqtt_host != "":
-    mqtt = Mqtt(args.mqtt_host, name=camera_name)
+    conn_data = MqttConnection(args.mqtt_host, name=camera_name)
+    mqtt = Mqtt(conn_data)
 
-MODEL_NAME = args.modeldir
+MODEL_NAME: str = args.modeldir
 STREAM_URL = args.streamurl
-GRAPH_NAME = args.graph
-LABELMAP_NAME = args.labels
+GRAPH_NAME: str = args.graph
+LABELMAP_NAME: str = args.labels
 min_conf_threshold = float(args.threshold)
 resW, resH = args.resolution.split("x")
 imW, imH = int(resW), int(resH)
@@ -274,22 +298,21 @@ else:
         from tensorflow.lite.python.interpreter import load_delegate
 
 # If using Edge TPU, assign filename for Edge TPU model
-if use_TPU:
+if use_TPU and GRAPH_NAME == "detect.tflite":
     # If user has specified the name of the .tflite file, use that name, otherwise use default 'edgetpu.tflite'
-    if GRAPH_NAME == "detect.tflite":
-        GRAPH_NAME = "edgetpu.tflite"
+    GRAPH_NAME = "edgetpu.tflite"
 
 # Get path to current working directory
-CWD_PATH = os.getcwd()
+CWD_PATH = Path.cwd()
 
 # Path to .tflite file, which contains the model that is used for object detection
-PATH_TO_CKPT = os.path.join(CWD_PATH, MODEL_NAME, GRAPH_NAME)
+PATH_TO_CKPT = CWD_PATH / MODEL_NAME / GRAPH_NAME
 
 # Path to label map file
-PATH_TO_LABELS = os.path.join(CWD_PATH, MODEL_NAME, LABELMAP_NAME)
+PATH_TO_LABELS = CWD_PATH / MODEL_NAME / LABELMAP_NAME
 
 # Load the label map
-with open(PATH_TO_LABELS) as f:
+with PATH_TO_LABELS.open() as f:
     labels = [line.strip() for line in f.readlines()]
 
 # Labels are officially listed in https://raw.githubusercontent.com/tensorflow/models/master/research/object_detection/data/mscoco_label_map.pbtxt
@@ -304,12 +327,12 @@ if labels[0] == "???":
 # If using Edge TPU, use special load_delegate argument
 if use_TPU:
     interpreter = Interpreter(
-        model_path=PATH_TO_CKPT,
+        model_path=str(PATH_TO_CKPT),
         experimental_delegates=[load_delegate("libedgetpu.so.1.0")],
     )
-    print(PATH_TO_CKPT)
+    logging.info(PATH_TO_CKPT)
 else:
-    interpreter = Interpreter(model_path=PATH_TO_CKPT)
+    interpreter = Interpreter(model_path=str(PATH_TO_CKPT))
 
 interpreter.allocate_tensors()
 
@@ -350,9 +373,10 @@ savedir = f"/srv/cameras/{camera_name}/video"
 stop = False
 
 
-def handler(signum, frame):
+def handler(_signum, _frame):
+    """Handle SIGINT and SIGTERM."""
     global stop
-    print(f"Dentro de handler stop {stop}")
+    logging.debug("Dentro de handler stop %s", stop)
     stop = True
 
 
@@ -430,11 +454,11 @@ while not stop:
             if camera_name == "se":
                 if area > 86000:
                     false_positive = True
-            elif camera_name == "sw":
-                if ((240 < x < 280) and (210 < y < 270) and (53000 < area < 73000)) or (
-                    (13 < x < 22) and (39 < y < 45) and (550 < area < 950)
-                ):  # Mesa y tronco, respectiv.
-                    false_positive = True
+            elif camera_name == "sw" and (
+                ((240 < x < 280) and (210 < y < 270) and (53000 < area < 73000))
+                or ((13 < x < 22) and (39 < y < 45) and (550 < area < 950))
+            ):  # Mesa y tronco, respectiv.
+                false_positive = True
             if false_positive:
                 continue
             logging.debug(f"X,Y = {x}, {y}; Area = {area};")
@@ -546,4 +570,4 @@ recorder.terminate()
 if mqtt:
     mqtt.stop()
 
-os._exit(0)
+os._exit(0)  # noqa: SLF001  # Make sure all threads exit.
