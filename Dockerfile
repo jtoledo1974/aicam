@@ -1,11 +1,11 @@
-FROM python:3.8
+FROM python:3.9
 
 RUN apt-get update && \
     apt-get install -y libgl1-mesa-glx gstreamer1.0-tools && \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip
-RUN pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite_runtime paho-mqtt opencv-python==3.4.11.41
+RUN pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite_runtime paho-mqtt opencv-python
 
 
 RUN git clone https://github.com/jtoledo1974/aicam.git
