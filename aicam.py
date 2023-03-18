@@ -271,6 +271,8 @@ PATH_TO_LABELS = os.path.join(CWD_PATH, MODEL_NAME, LABELMAP_NAME)
 with open(PATH_TO_LABELS, 'r') as f:
     labels = [line.strip() for line in f.readlines()]
 
+# Labels are officially listed in https://raw.githubusercontent.com/tensorflow/models/master/research/object_detection/data/mscoco_label_map.pbtxt
+# But the format expected by this script is https://raw.githubusercontent.com/JerryKurata/TFlite-object-detection/main/labelmap.txt
 # Have to do a weird fix for label map if using the COCO "starter model" from
 # https://www.tensorflow.org/lite/models/object_detection/overview
 # First label is '???', which has to be removed.
