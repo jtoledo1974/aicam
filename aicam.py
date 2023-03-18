@@ -1,21 +1,21 @@
-### Person detection off a video stream using TFLite COCO model ###
+"""Person detection off a video stream using TFLite COCO model."""
 # Based off code from Evan Juras https://github.com/EdjeElectronics/TensorFlow-Lite-Object-Detection-on-Android-and-Raspberry-Pi/blob/master/TFLite_detection_stream.py
 
 # Import packages
-import os
 import argparse
-import cv2
-import numpy as np
-import time
-from threading import Thread
 import importlib.util
-import signal
 import logging
-from datetime import datetime, timedelta
-from pathlib import PurePath
+import os
+import signal
 import subprocess
 import threading
+import time
+from datetime import datetime
+from pathlib import PurePath
+from threading import Thread
 
+import cv2
+import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -28,7 +28,6 @@ class Mqtt:
 
         self.client = client = mqtt.Client()
 
-        # client.enable_logger()
         client.connect(host, port, keepalive, bind_address)
         client.loop_start()
 
@@ -83,14 +82,13 @@ class Mqtt:
         pass
         # We avoid deleting the configuration entries so that we keep the last
         # known values when we stop the program
-        # self.client.publish(f"{self.base}/config", "")
         self.client.publish(f"{self.basecam}/config", "")
 
 
 # Define VideoStream class to handle streaming of video from webcam in separate processing thread
 # Source - Adrian Rosebrock, PyImageSearch: https://www.pyimagesearch.com/2015/12/28/increasing-raspberry-pi-fps-with-python-and-opencv/
 class VideoStream:
-    """Camera object that controls video streaming"""
+    """Camera object that controls video streaming."""
 
     def __init__(self, resolution=(640, 480)):
         # Initialize the camera image stream
@@ -106,7 +104,6 @@ class VideoStream:
         self.stream = cv2.VideoCapture(STREAM_URL)
         if not self.stream.isOpened():
             raise ConnectionError
-        # self.stream.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         self.stream.set(3, resolution[0])
         self.stream.set(4, resolution[1])
 
@@ -292,7 +289,7 @@ PATH_TO_CKPT = os.path.join(CWD_PATH, MODEL_NAME, GRAPH_NAME)
 PATH_TO_LABELS = os.path.join(CWD_PATH, MODEL_NAME, LABELMAP_NAME)
 
 # Load the label map
-with open(PATH_TO_LABELS, "r") as f:
+with open(PATH_TO_LABELS) as f:
     labels = [line.strip() for line in f.readlines()]
 
 # Labels are officially listed in https://raw.githubusercontent.com/tensorflow/models/master/research/object_detection/data/mscoco_label_map.pbtxt
@@ -367,10 +364,6 @@ person_on_last = False
 while not stop:
     logging.debug("Top of while 2")
 
-    # time.sleep(1)
-    # continue
-    # logging.error("Dentro del while!!")
-
     # Start timer (for calculating frame rate)
     t1 = cv2.getTickCount()
 
@@ -408,7 +401,6 @@ while not stop:
     scores = interpreter.get_tensor(output_details[2]["index"])[
         0
     ]  # Confidence of detected objects
-    # num = interpreter.get_tensor(output_details[3]['index'])[0]  # Total number of detected objects (inaccurate and not needed)
 
     # Hold the highest confidence of person in image
     person_confidence = 0
@@ -419,7 +411,6 @@ while not stop:
         if (scores[i] > min_conf_threshold) and (scores[i] <= 1.0):
             # Get bounding box coordinates and draw box
             # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
-            # print(imW, imH, boxes[1])
             ymin = int(max(1, (boxes[i][0] * imH)))
             xmin = int(max(1, (boxes[i][1] * imW)))
             ymax = int(min(imH, (boxes[i][2] * imH)))
@@ -445,8 +436,6 @@ while not stop:
                 ):  # Mesa y tronco, respectiv.
                     false_positive = True
             if false_positive:
-                # timestring = datetime.now().strftime("%Y-%m/%d-%H.%M.%S")
-                # cv2.imgwrite(f"/srv/camera/")
                 continue
             logging.debug(f"X,Y = {x}, {y}; Area = {area};")
 
@@ -486,7 +475,7 @@ while not stop:
     # Draw framerate in corner of frame
     cv2.putText(
         frame,
-        "FPS: {0:.2f}".format(frame_rate_calc),
+        f"FPS: {frame_rate_calc:.2f}",
         (30, 50),
         cv2.FONT_HERSHEY_SIMPLEX,
         1,
@@ -496,7 +485,6 @@ while not stop:
     )
 
     # All the results have been drawn on the frame, so it's time to display it.
-    # cv2.imshow('Object detector', frame)
 
     # Calculate framerate
     t2 = cv2.getTickCount()
