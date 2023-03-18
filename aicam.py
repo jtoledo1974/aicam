@@ -21,7 +21,7 @@ import numpy as np
 
 # ruff: noqa: ANN001, ANN201, D102, DTZ005, FBT002, PLR2004
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 @dataclass
@@ -368,7 +368,7 @@ elif camera_name == "se":
     port = 5001
 logging.debug("Initializing Videorecorder")
 recorder = Videorecorder(port=port)
-savedir = f"/srv/cameras/{camera_name}/video"
+savedir = f"/recordings/{camera_name}"
 
 stop = False
 

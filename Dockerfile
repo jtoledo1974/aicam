@@ -1,7 +1,7 @@
 FROM python:3.8
 
 RUN apt-get update && \
-    apt-get install -y libgl1-mesa-glx && \
+    apt-get install -y libgl1-mesa-glx gstreamer1.0-tools && \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip
