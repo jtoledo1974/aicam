@@ -1,12 +1,16 @@
 version: '3'
 services:
-  aicam:
+  aicam_sw:
     image: aicam
-    container_name: aicam
-    environment:
-      - MODELDIR=/models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite
-      - STREAMURL=http://192.168.1.1:8080/video
-    command: bash -c "while true; do sleep 3600; done"
+    container_name: aicam_sw
+    command: python aicam.py --modeldir /models/ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/ --streamurl rtsp://user:passwd@192.168.1.240:554//h264Preview_01_sub --resolution 640x480 --mqtt_host=192.168.1.40 --mqtt_name sw --threshold 0.65
+    volumes:
+      - .:/aicam
+      - ./recordings:/recordings
+  aicam_se:
+    image: aicam
+    container_name: aicam_se
+    command: python aicam.py --modeldir /models/ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/ --streamurl rtsp://user:passwd@192.168.1.241:554//h264Preview_01_sub --resolution 640x480 --mqtt_host=192.168.1.40 --mqtt_name se --threshold 0.65
     volumes:
       - .:/aicam
       - ./recordings:/recordings
