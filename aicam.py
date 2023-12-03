@@ -23,6 +23,8 @@ import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+# Print the command line used
+logging.debug(" ".join(["python3", *os.sys.argv]))
 
 @dataclass
 class MqttConnection:
