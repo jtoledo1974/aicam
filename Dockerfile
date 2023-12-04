@@ -1,7 +1,7 @@
 FROM python:3.9
 
 RUN apt-get update && \
-    apt-get install -y libgl1-mesa-glx gstreamer1.0-tools ffmpeg && \
+    apt-get install -y libgl1-mesa-glx gstreamer1.0-tools  gstreamer1.0-rtsp ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip

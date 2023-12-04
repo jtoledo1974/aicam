@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -25,6 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 # Print the command line used
 logging.debug(" ".join(["python3", *os.sys.argv]))
+
 
 @dataclass
 class MqttConnection:
@@ -104,7 +106,6 @@ class Mqtt:
         self.fps = fps
 
     def stop(self):
-        pass
         # We avoid deleting the configuration entries so that we keep the last
         # known values when we stop the program
         self.client.publish(f"{self.basecam}/config", "")
@@ -176,10 +177,49 @@ class VideoStream:
 class Videorecorder:
     """Class to record video from a stream."""
 
-    def __init__(self, port=5000, video_duration=20):
+    def __init__(
+        self, url: str, latency: int = 10000, port: int = 5000, video_duration=20
+    ):
+        self.url = url
+        self.latency = latency
         self.port = port
         self.video_duration = video_duration
-        self.recording_process = None
+        self.recording_process: Optional[subprocess.Popen[bytes]] = None
+
+        self.launch_delayed_video_server()
+
+    def launch_delayed_video_server(self):
+        """Launch a server that streams a delayed version of the given camera URL."""
+        logging.info("Launching delayed video server")
+        cmd = [
+            "/usr/bin/gst-launch-1.0",
+            "rtspsrc",
+            f"latency={self.latency}",
+            f"location={self.url}",
+            "name=rtspsrc",
+            "!",
+            "rtph264depay",
+            "!",
+            "h264parse",
+            "config_interval=-1",
+            "!",
+            "mpegtsmux",
+            "name=mux",
+            "!",
+            "tcpserversink",
+            "host=127.0.0.1",
+            f"port={self.port}",
+            "rtspsrc.",
+            "!",
+            "rtpmp4gdepay",
+            "!",
+            "aacparse",
+            "!",
+            "mux.",
+        ]
+
+        logging.info(" ".join(cmd))
+        self.delayed_video_server = subprocess.Popen(cmd)
 
     def record_video(self, filename):
         if not self.recording_process:
@@ -369,7 +409,7 @@ if camera_name == "sw":
 elif camera_name == "se":
     port = 5001
 logging.debug("Initializing Videorecorder")
-recorder = Videorecorder(port=port)
+recorder = Videorecorder(url=STREAM_URL, port=port)
 savedir = f"/recordings/{camera_name}"
 
 stop = False
@@ -526,7 +566,7 @@ while not stop:
         fps_minute_average = minute_frame_counter / seconds_passed
         minute_frame_counter = 0
         fpm_last_reset = now
-        logging.debug(f"-------------------- Average FPS {fps_minute_average:.2f}")
+        logging.debug("-------------------- Average FPS %.2f", fps_minute_average)
 
         if mqtt:
             mqtt.set_fps(fps_minute_average)
@@ -572,4 +612,4 @@ recorder.terminate()
 if mqtt:
     mqtt.stop()
 
-os._exit(0)  # noqa: SLF001  # Make sure all threads exit.
+os._exit(0)  # Make sure all threads exit.
