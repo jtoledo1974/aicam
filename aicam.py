@@ -307,6 +307,7 @@ parser.add_argument(
     "--mqtt_host", help="Address of mqtt server to which state is published", default=""
 )
 parser.add_argument("--mqtt_name", help="Name of binary_sensor device", default="aicam")
+parser.add_argument("--max_fps", help="Maximum FPS", default=3)
 
 args = parser.parse_args()
 
@@ -324,6 +325,7 @@ min_conf_threshold = float(args.threshold)
 res_width, res_height = args.resolution.split("x")
 img_width, img_height = int(res_width), int(res_height)
 use_tpu = args.edgetpu
+max_fps = float(args.max_fps)
 
 # Import TensorFlow libraries
 # If tflite_runtime is installed, import interpreter from tflite_runtime, else import from regular tensorflow
@@ -428,6 +430,7 @@ signal.signal(signal.SIGINT, handler)
 # for frame1 in camera.capture_continuous(rawCapture, format="bgr",use_video_port=True):
 first_frame = True
 person_on_last = False
+
 while not stop:
     logger.debug("Top of while 2")
 
@@ -557,6 +560,10 @@ while not stop:
     t2 = cv2.getTickCount()
     time1 = (t2 - t1) / freq
     frame_rate_calc = 1 / time1
+
+    # Sleep so that we keep a maximum of max_fps
+    if frame_rate_calc >= max_fps:
+        time.sleep(1 / max_fps - time1)
 
     # Calcultate average FPS in a minute
     now = datetime.now()
