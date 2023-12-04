@@ -23,9 +23,10 @@ import numpy as np
 # ruff: noqa: ANN001, ANN201, D102, DTZ005, FBT002, PLR2004
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
 # Print the command line used
-logging.debug(" ".join(["python3", *os.sys.argv]))
+logger.debug(" ".join(["python3", *os.sys.argv]))
 
 
 @dataclass
@@ -67,7 +68,7 @@ class Mqtt:
         config_topic = f"{base}/config"
         config_msg = f'{{"name": "aicam_{name}", "topic": "{base}"}}'
 
-        logging.info("Publish %s %s", config_topic, config_msg)
+        logger.info("Publish %s %s", config_topic, config_msg)
         client.publish(config_topic, config_msg)
 
         self.state, self.confidence, self.fps, self.image = "OFF", 0, 0, None
@@ -79,18 +80,18 @@ class Mqtt:
             self.set_image(image)
 
         if state != self.state or force:
-            logging.info("Publish %s %s", f"{self.base}/state", state)
+            logger.info("Publish %s %s", f"{self.base}/state", state)
             self.client.publish(f"{self.base}/state", state)
 
         self.state = state
 
     def set_image(self, image):
-        logging.info("Publish %s 'img_data'", self.basecam)
+        logger.info("Publish %s 'img_data'", self.basecam)
         self.client.publish(self.basecam, image)
 
     def set_confidence(self, confidence):
         if confidence != self.confidence:
-            logging.info(
+            logger.info(
                 "Publish %s {'confidence': %s}", f"{self.base}/attributes", confidence
             )
             self.client.publish(
@@ -101,7 +102,7 @@ class Mqtt:
     def set_fps(self, fps):
         self.set_state(self.state, self.confidence)
         topic, value = f"{self.base}/attributes", f'{{"fps": {fps}}}'
-        logging.debug("Publish %s %s", topic, value)
+        logger.debug("Publish %s %s", topic, value)
         self.client.publish(topic, value)
         self.fps = fps
 
@@ -150,7 +151,7 @@ class VideoStream:
         while True:
             # If the camera is stopped, stop the thread
             if self.stopped:
-                logging.debug("Releasing stream")
+                logger.debug("Releasing stream")
                 # Close camera resources
                 self.stream.release()
                 return
@@ -160,7 +161,7 @@ class VideoStream:
 
             # In case of disconnect
             if not self.grabbed:
-                logging.warning("Failed to grab frame. Possible disconnect")
+                logger.warning("Failed to grab frame. Possible disconnect")
                 self.stream.release()
                 self.connect(self.resolution)
 
@@ -190,7 +191,7 @@ class Videorecorder:
 
     def launch_delayed_video_server(self):
         """Launch a server that streams a delayed version of the given camera URL."""
-        logging.info("Launching delayed video server")
+        logger.info("Launching delayed video server")
         cmd = [
             "/usr/bin/gst-launch-1.0",
             "rtspsrc",
@@ -218,7 +219,7 @@ class Videorecorder:
             "mux.",
         ]
 
-        logging.info(" ".join(cmd))
+        logger.info(" ".join(cmd))
         self.delayed_video_server = subprocess.Popen(cmd)
 
     def record_video(self, filename):
@@ -230,7 +231,7 @@ class Videorecorder:
                 Path(filename).parent.mkdir(parents=True)
 
             # Stream ts from server to file
-            logging.info("Starting recording %s", filename)
+            logger.info("Starting recording %s", filename)
             cmd = f"/usr/bin/gst-launch-1.0 -v tcpclientsrc host=127.0.0.1 port={self.port} ! filesink location={filename}"
             self.recording_process = subprocess.Popen(cmd.split(" "))
 
@@ -240,26 +241,26 @@ class Videorecorder:
 
         else:
             # Already recording. Delay end of recording
-            logging.info("Retrasando fin de grabacion")
+            logger.info("Retrasando fin de grabacion")
             self.timer.cancel()
             self.timer = threading.Timer(self.video_duration, self.stop_recording)
             self.timer.start()
 
     def stop_recording(self, *_args, **_kwargs):
-        logging.info("Parando grabacion")
+        logger.info("Parando grabacion")
         self.recording_process.terminate()
         try:
             self.recording_process.wait(timeout=2)
         except subprocess.TimeoutExpired:
-            logging.exception(("Did not terminate", self.recording_process))
+            logger.exception(("Did not terminate", self.recording_process))
         self.recording_process = None
 
         # Transcode to mp4
         old_fn = Path(self.filename)
         new_fn = old_fn.parent / (old_fn.stem + ".mp4")
         cmd = f"ffmpeg -i {old_fn} -c copy {new_fn} && rm {old_fn}"
-        logging.info(cmd)
-        logging.info(subprocess.run(cmd, shell=True))
+        logger.info(cmd)
+        logger.info(subprocess.run(cmd, shell=True))
 
     def terminate(self):
         if self.recording_process:
@@ -372,7 +373,7 @@ if use_tpu:
         model_path=str(PATH_TO_CKPT),
         experimental_delegates=[load_delegate("libedgetpu.so.1.0")],
     )
-    logging.info(PATH_TO_CKPT)
+    logger.info(PATH_TO_CKPT)
 else:
     interpreter = Interpreter(model_path=str(PATH_TO_CKPT))
 
@@ -399,7 +400,7 @@ fpm_last_reset = datetime.now()
 
 
 # Initialize video stream
-logging.debug("Initializing VideoStream")
+logger.debug("Initializing VideoStream")
 videostream = VideoStream(resolution=(img_width, img_height)).start()
 time.sleep(1)
 
@@ -408,7 +409,7 @@ if camera_name == "sw":
     port = 5000
 elif camera_name == "se":
     port = 5001
-logging.debug("Initializing Videorecorder")
+logger.debug("Initializing Videorecorder")
 recorder = Videorecorder(url=STREAM_URL, port=port)
 savedir = f"/recordings/{camera_name}"
 
@@ -418,7 +419,7 @@ stop = False
 def handler(_signum, _frame):
     """Handle SIGINT and SIGTERM."""
     global stop
-    logging.debug("Dentro de handler stop %s", stop)
+    logger.debug("Dentro de handler stop %s", stop)
     stop = True
 
 
@@ -428,20 +429,20 @@ signal.signal(signal.SIGINT, handler)
 first_frame = True
 person_on_last = False
 while not stop:
-    logging.debug("Top of while 2")
+    logger.debug("Top of while 2")
 
     # Start timer (for calculating frame rate)
     t1 = cv2.getTickCount()
 
     # Grab frame from video stream
-    logging.debug("Before frame read")
+    logger.debug("Before frame read")
     frame1 = videostream.read()
 
     # Acquire frame and resize to expected shape [1xHxWx3]
     try:
         frame = frame1.copy()
     except AttributeError:
-        logging.warning("Failed to grab frame")
+        logger.warning("Failed to grab frame")
         continue
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -453,10 +454,10 @@ while not stop:
         input_data = (np.float32(input_data) - input_mean) / input_std
 
     # Perform the actual detection by running the model with the image as input
-    logging.debug("Before detection")
+    logger.debug("Before detection")
     interpreter.set_tensor(input_details[0]["index"], input_data)
     interpreter.invoke()
-    logging.debug("After invoke")
+    logger.debug("After invoke")
     # Retrieve detection results
     boxes = interpreter.get_tensor(output_details[0]["index"])[
         0
@@ -471,7 +472,7 @@ while not stop:
     # Hold the highest confidence of person in image
     person_confidence = 0
 
-    logging.debug("Before looping for detections")
+    logger.debug("Before looping for detections")
     # Loop over all detections and draw detection box if confidence is above minimum threshold
     for i in range(len(scores)):
         if (scores[i] > min_conf_threshold) and (scores[i] <= 1.0):
@@ -503,7 +504,7 @@ while not stop:
                 false_positive = True
             if false_positive:
                 continue
-            logging.debug("X,Y = %s, %s; Area = %s;", x, y, area)
+            logger.debug("X,Y = %s, %s; Area = %s;", x, y, area)
 
             if scores[i] > person_confidence:
                 person_confidence = scores[i]
@@ -560,13 +561,13 @@ while not stop:
     # Calcultate average FPS in a minute
     now = datetime.now()
     seconds_passed = (now - fpm_last_reset).seconds
-    logging.debug((minute_frame_counter, now.second, seconds_passed))
+    logger.debug((minute_frame_counter, now.second, seconds_passed))
 
     if now.second == 0 and seconds_passed > 1:
         fps_minute_average = minute_frame_counter / seconds_passed
         minute_frame_counter = 0
         fpm_last_reset = now
-        logging.debug("-------------------- Average FPS %.2f", fps_minute_average)
+        logger.debug("-------------------- Average FPS %.2f", fps_minute_average)
 
         if mqtt:
             mqtt.set_fps(fps_minute_average)
@@ -604,7 +605,7 @@ while not stop:
 
 
 # Clean up
-logging.debug("Cleaning up")
+logger.debug("Cleaning up")
 videostream.stop()
 cv2.destroyAllWindows()
 recorder.terminate()
