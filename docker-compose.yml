@@ -7,6 +7,10 @@ services:
     volumes:
       - .:/aicam
       - ./recordings:/recordings
+    # Open ports 5000 and 5001 for the delaying video server
+    ports:
+      - 5000:5000
+      - 5001:5001
   aicam_se:
     image: aicam
     container_name: aicam_se

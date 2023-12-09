@@ -157,7 +157,7 @@ class VideoStream:
                 return
 
             # Otherwise, grab the next frame from the stream
-            (self.grabbed, self.frame) = self.stream.read()
+            self.grabbed, self.frame = self.stream.read()
 
             # In case of disconnect
             if not self.grabbed:
@@ -202,13 +202,13 @@ class Videorecorder:
             "rtph264depay",
             "!",
             "h264parse",
-            "config_interval=-1",
+            # "config_interval=-1",
             "!",
             "mpegtsmux",
             "name=mux",
             "!",
             "tcpserversink",
-            "host=127.0.0.1",
+            "host=0.0.0.0",
             f"port={self.port}",
             "rtspsrc.",
             "!",
