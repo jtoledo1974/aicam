@@ -1,0 +1,2 @@
+The venv is only used so that the libraries are available and vscode can access them when developing.
+The actual code runs inside a docker container with the same libraries installed.
